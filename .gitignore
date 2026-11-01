@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# tgpak
+config.json
+out/
+staging/
+.chrome-profile/

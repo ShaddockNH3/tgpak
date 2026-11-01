@@ -1,0 +1,22 @@
+{
+  "telegram": {
+    "channel": "example_channel",
+    "tag": "#作者tag",
+    "profile": "./.chrome-profile",
+    "headless": false
+  },
+  "paths": {
+    "out": "./out",
+    "staging": "./staging"
+  },
+  "pikpak": {
+    "username": "",
+    "password": ""
+  },
+  "upload": {
+    "url": "http://127.0.0.1:5244",
+    "username": "",
+    "password": "",
+    "base": "/remote/path"
+  }
+}
