@@ -65,13 +65,18 @@ def check_period(cfg, out, staging, period, remote_names=None):
                 issues.append(f"缺 {len(missing)} 个：{sorted(missing)[:3]}")
             if extra:
                 issues.append(f"多 {len(extra)} 个：{sorted(extra)[:3]}")
-        else:
-            truth = _pikpak_truth(cfg, out, period)
-            if truth and "count" in truth:
-                if len(files) != truth["count"]:
-                    diff = truth["count"] - len(files)
-                    issues.append(f"{'缺' if diff > 0 else '多'}{abs(diff)} 个"
-                                  f"（{len(files)}/{truth['count']}）")
+        if not files:
+            issues.append("空")
+        truth = _pikpak_truth(cfg, out, period)
+        if truth is None:
+            return issues
+        if "error" in truth:
+            issues.append(f"真值读不到：{truth['error']}")
+            return issues
+        if len(files) != truth["count"]:
+            diff = truth["count"] - len(files)
+            issues.append(f"{'缺' if diff > 0 else '多'}{abs(diff)} 个"
+                          f"（{len(files)}/{truth['count']}）")
         return issues
 
     # 本地比对

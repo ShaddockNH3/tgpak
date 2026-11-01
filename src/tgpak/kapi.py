@@ -40,7 +40,9 @@ async ([q, offset]) => {
     return (r.messages || []).map(m => ({
         id: m.id,
         grouped: String(m.grouped_id || ''),
-        text: (m.message || '').replace(/\n/g, ' ')
+        text: (m.message || '').replace(/\n/g, ' '),
+        // 链接可能藏在 emoji 后面（messageEntityTextUrl），正文里看不到
+        urls: (m.entities || []).filter(e => e.url).map(e => e.url)
     }));
 }
 """

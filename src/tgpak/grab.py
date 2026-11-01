@@ -40,6 +40,14 @@ def save_periods(out: pathlib.Path, data: dict):
         json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
+PIKPAK_RE = re.compile(r"https?://(?:mypikpak\.com|\w+\.pikpak\.com)/s/\S+")
+
+
+def load_links(out: pathlib.Path) -> dict:
+    f = out / "links.json"
+    return json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+
+
 def add_post(out: pathlib.Path, period: int, post: int):
     """认不出期数的帖子（比如合集）手动登记。"""
     data = load_periods(out)
@@ -56,14 +64,30 @@ def scan(wc, cfg, out: pathlib.Path) -> dict:
         num = period_of(p["text"])
         if num is None:
             unknown.append({"id": p["id"], "text": p["text"][:80]})
-            continue
-        found.setdefault(str(num), p["id"])
+        else:
+            found.setdefault(str(num), p["id"])
+        # 链接可能在正文里，也可能藏在 emoji 后面的 entity 里
+        hits = PIKPAK_RE.findall(p["text"])
+        hits += [u for u in (p.get("urls") or []) if PIKPAK_RE.search(u)]
+        if hits and num is not None:
+            links = load_links(out)
+            if links.get(str(num)) != hits[0]:
+                links[str(num)] = hits[0]
+                (out / "links.json").write_text(
+                    json.dumps(links, ensure_ascii=False, indent=1), encoding="utf-8")
+
     data = load_periods(out)
     data.update(found)
     save_periods(out, data)
+
     print(f"搜到 {len(posts)} 条帖子，认出 {len(found)} 期")
+    links = load_links(out)
+    if links:
+        print("这几期帖子带 P 盘原图链接（已存 links.json，走 tgpak pikpak get）：")
+        for k in sorted(links, key=int):
+            print(f"  第 {k} 期  {links[k]}")
     if unknown:
-        print(f"另有 {len(unknown)} 条认不出期数（可能是合集或别的作者）：")
+        print(f"另有 {len(unknown)} 条认不出期数（合集/单发，用 tg add 手动登记）：")
         for u in unknown[:10]:
             print(f"  {u['id']:>8}  {u['text'][:60]}")
     return data
@@ -85,10 +109,18 @@ def fetch(wc, cfg, out: pathlib.Path, period: int) -> dict:
     return manifest
 
 
+MIME_EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+            "video/mp4": "mp4", "video/quicktime": "mov", "video/x-matroska": "mkv",
+            "application/zip": "zip", "application/x-rar-compressed": "rar",
+            "application/x-7z-compressed": "7z", "application/pdf": "pdf"}
+
+
 def target_name(item: dict) -> str:
     """归档命名：图片视频用 001.jpg / 002.mp4，压缩包保留原名挂个序号。"""
     idx, ext = item["idx"], item["ext"]
     fname = item.get("fname")
+    if ext in (None, "", "bin"):
+        ext = MIME_EXT.get((item.get("mime") or "").split(";")[0].strip(), ext or "bin")
     if fname:
         safe = re.sub(r'[\\/:*?"<>|]', "_", fname).strip()
         suffix = pathlib.Path(safe).suffix.lower()
