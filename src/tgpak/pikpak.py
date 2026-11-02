@@ -148,13 +148,17 @@ async def _run(cfg, staging: pathlib.Path, out: pathlib.Path, period: int, link:
             continue
         print(f"  [批 {i}/{len(batches)}] {len(need)} 个，转存中…")
         await cli.restore(sid, token, [f["id"] for f in need])
-        await asyncio.sleep(8)
-        pack = await _pack_folder(cli)
-        if not pack:
-            print("    找不到转存目录，跳过这批")
-            continue
-        lst = await cli.file_list(parent_id=pack, size=100)
-        landed = {f["name"]: f for f in (lst.get("files") or [])}
+        pack = None
+        landed = {}
+        for poll in range(8):  # 转存落盘经常慢，最多等约 5 分钟
+            await asyncio.sleep(15 + poll * 5)
+            pack = pack or await _pack_folder(cli)
+            if not pack:
+                continue
+            lst = await cli.file_list(parent_id=pack, size=100)
+            landed = {f["name"]: f for f in (lst.get("files") or [])}
+            if all(f["name"] in landed for f in need):
+                break
         async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as sess:
             for f in need:
                 src = landed.get(f["name"])
