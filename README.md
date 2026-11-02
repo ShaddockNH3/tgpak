@@ -7,23 +7,6 @@
 图包一般发在帖子评论区，一期几十到上百个文件。手动存会遇到顺序乱、数量对不上、
 大文件下到一半断掉这几件事，所以这里先认期、再拉清单、按清单落盘，收完可以核对。
 
-## 为什么不是 Web A
-
-Web A 有 `/a/download/photo<id>`，画质没问题，但要求客户端认识这张图 —— 没在界面上渲染过的，
-请求会一直挂着然后 500。更要命的是 `<id>` 是 Telegram 给每个文件发的随机 64 位编号，跟顺序无关，
-只能从浏览器缓存里捞，捞出来混着相邻消息和隔壁期的图。按这条路做，数量对不上，顺序也排不出来。
-
-Web K 把内部 manager 挂在 window 上了：
-
-```js
-rootScope.managers.apiManager.invokeApi('messages.getReplies', {peer, msg_id})
-```
-
-一次拿回评论区（也就是相册本体）的全部消息，按 id 排好序，每张图带着 `photo.id`、尺寸列表、
-`file_reference`。顺序、数量、文件 id 一次齐活。
-
-调用姿势和踩过的坑在 `docs/` 里。
-
 ## 安装
 
 ```bash
@@ -66,22 +49,15 @@ uv run tgpak tg get --periods 2-17    # 按清单顺序下到 staging/p02 … p1
 Telegram 里的图是压过的，想要原始尺寸得去 P 盘取分享里的原档。
 
 免费号只有 6GB 空间，一期原档动辄几个 GB，所以分批：转存一批 → 下 → 删云端 → 下一批。
-一批卡在 3.4GB / 90 个文件以内，超了转存会落不全，日志里能看到一串「还没落盘」。
+一批卡在 3.4GB / 90 个文件以内，超了转存会落不全。
 
 ```bash
 uv run tgpak pikpak link --period 18 --url https://mypikpak.com/s/xxxx
 uv run tgpak pikpak get --period 18
 ```
 
-进度在 `out/dl_progress.json`，重跑接着下。转存之后要等它落盘，落盘时间不稳定，
-所以要轮询，不能等固定几秒就去看。
-
-免费号还有频率限制。转存、取直链、删除这些写操作打得太密，整个 API 会被限，
-回 `Aborted - Your operation is too frequent`，只能停手等。
-一晚把三个号全跑限过，教训是一期一停比连着刷快得多。
-
-空间不足是另一个错误（`Insufficient cloud storage`）。下载失败的文件会留在云端吃配额，
-攒多了写不进新的，需要定期清 `Pack From Shared`。
+进度在 `out/dl_progress.json`，重跑接着下。免费号有频率限制，跑快了整个账号会被限，
+回 `Aborted - Your operation is too frequent`。
 
 ## 传网盘
 
@@ -94,8 +70,7 @@ uv run tgpak push --period 3 --to /other/dir
 uv run tgpak push --period 3 --force         # 云端已有也重传（覆盖用）
 ```
 
-云端已有且尺寸一致的跳过，可以反复跑。token 会过期，返回 401 时要重登再传，
-不然会一路空跑，看着在动其实一个都没上去。
+云端已有且尺寸一致的跳过，可以反复跑。
 
 ## 校验
 
@@ -127,10 +102,14 @@ src/tgpak/
   push.py      传网盘：OpenList
   verify.py    校验
   cli.py       命令行
-docs/
-  k-api.md     Web K 内部 API 怎么用
-  pikpak.md    P 盘的限制
-  pitfalls.md  踩过的坑
 ```
+
+## 思路构建
+
+这个仓库里最费时间的不是写代码，是把几条走不通的路走完，确认哪条能走。
+
+- [Web K 内部 API](docs/k-api.md)：拿 peer、找帖子、取评论区、下载的调用姿势，以及四个必踩的坑
+- [P 盘](docs/pikpak.md)：6GB 空间怎么分批、file_list 静默截断、落盘延迟、频率限制的成因
+- [弯路记录](docs/pitfalls.md)：为什么最后没用 Web A、base64 中转、token 失效、批量删除被拦
 
 MIT
