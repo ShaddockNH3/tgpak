@@ -76,6 +76,26 @@ async def _pack_folder(cli: PikPakApi):
     return None
 
 
+async def clean_pack(cli: PikPakApi) -> int:
+    """清空转存目录。上一轮没下成功的残留会一直占着 6GB 配额，攒多了就落不了盘。"""
+    n = 0
+    for _ in range(20):
+        pid = await _pack_folder(cli)
+        if not pid:
+            break
+        sub = await cli.file_list(parent_id=pid, size=100)
+        ids = [x["id"] for x in (sub.get("files") or [])]
+        if not ids:
+            break
+        for i in range(0, len(ids), 50):
+            try:
+                await cli.delete_forever(ids[i:i + 50])
+                n += len(ids[i:i + 50])
+            except Exception:
+                await asyncio.sleep(3)
+    return n
+
+
 async def _download_one(cli, session, f, dest: pathlib.Path, prog, key):
     target = dest / f["name"]
     if key in prog["done"] or (target.exists() and target.stat().st_size > 0):
@@ -111,6 +131,9 @@ async def _run(cfg, staging: pathlib.Path, out: pathlib.Path, period: int, link:
         raise SystemExit("config.json 里没填 pikpak 账号")
     cli = PikPakApi(username=pk["username"], password=pk["password"])
     await cli.login()
+    freed = await clean_pack(cli)
+    if freed:
+        print(f"  清了 {freed} 个上次的残留")
 
     sid = link.rstrip("/").split("/s/")[-1].split("/")[0]
     info = await cli.get_share_info(link)
