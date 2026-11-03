@@ -9,7 +9,7 @@ import urllib.parse
 
 import requests
 
-CHUNK_TIMEOUT = 600
+CHUNK_TIMEOUT = (30, 7200)  # 连接 30s，读 2h：大文件走 alist 同步转发，等云端传完才回
 RETRY = 3
 
 
