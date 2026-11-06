@@ -10,62 +10,53 @@ DOM 里的 id 是消息 id，不是文件 id：
 <div id="album-media-message-106343" class="media-inner">
 ```
 
-`106343` 是这条消息在讨论群里的序号。文件 id 是 `4994865353015889314` 这种 19 位随机数，
-跟顺序一点关系没有。
+`106343` 是这条消息在讨论群里的序号。文件 id 是 `4994865353015889314` 这种 19 位随机数，跟顺序一点关系没有。
 
-Teact（Web A 自己的 React 实现）没把 props 挂到 DOM 上，`Object.getOwnPropertyNames(el)`
-翻出来除了原生属性什么都没有。点开大图 `<img src="blob:...">`，属性里也没有 photo id。
-IndexedDB 里 `tt-data` 只有 langpack 和全局状态，`tweb-account-*` 的 `messages` 表是空的。
-网络请求更抓不到 —— 图命中 CacheStorage 就不发请求。
+Teact（Web A 自己的 React 实现）没把 props 挂到 DOM 上，`Object.getOwnPropertyNames(el)` 翻出来除了原生属性什么都没有。点开大图 `<img src="blob:...">`，属性里也没有 photo id。IndexedDB 里 `tt-data` 只有 langpack 和全局状态，`tweb-account-*` 的 `messages` 表是空的。网络请求更抓不到——图命中 CacheStorage 就不发请求。
 
 最后只剩 `tt-media` 缓存的 key 能用：
 
-```
+```text
 https://web.telegram.org/photo4994865353015889308?size=x
 ```
 
-只有文件 id 和尺寸档，没有消息 id，没有顺序。某一期实测 33 张，捞到 59 个 id，混着隔壁期的图，
-还排不出顺序。这路走不通。
+只有文件 id 和尺寸档，没有消息 id，没有顺序。某一期实测 33 张，捞到 59 个 id，混着隔壁期的图，还排不出顺序。这路走不通。
 
 ## Web A 的下载接口，没渲染过的图必挂
 
-`/a/download/photo<id>` 画质是对的（2560 长边，比 1280 档还大），但它得先在客户端状态里找到这张图。
-裸页面发请求，15 秒后 abort；把评论区页面打开再发，能下的只有当前渲染出来的一两张，其余 500。
+`/a/download/photo<id>` 画质是对的（2560 长边，比 1280 档还大），但它得先在客户端状态里找到这张图。裸页面发请求，15 秒后 abort；把评论区页面打开再发，能下的只有当前渲染出来的一两张，其余 500。
 
 批量抓的时候这是致命的：跑一百张成功十几张。
 
-Web K 走的 `messages.getReplies` 一次拿回整个评论区，顺序、数量、文件 id 都在，
-所以最后选了 K。调用方式见 [k-api.md](k-api.md)。
+Web K 走的 `messages.getReplies` 一次拿回整个评论区，顺序、数量、文件 id 都在，所以最后选了 K。调用方式见 [k-api.md](k-api.md)。
 
 ## base64 中转慢得离谱
 
 最早是 JS 里 `arrayBuffer` → 逐字节拼字符串 → `btoa` → Python `b64decode`。
+
 换成 Blob 直接 POST 到本机之后快了一个量级。
 
 ## PikPak 的 file_list 静默截断
 
-`size=100` 是上限，传 200 不报错，只返 100 条。一期 121 个文件只下到 100 个，
-日志里一点异常都没有。改成一批最多 90 个才补全。
+`size=100` 是上限，传 200 不报错，只返 100 条。一期 121 个文件只下到 100 个，日志里一点异常都没有。改成一批最多 90 个才补全。
 
 ## 转存后等固定秒数去看，等于白等
 
-原先 `restore` 之后 `sleep(8)` 就查 `file_list`，经常只落了一两个文件，其余判成「还没落盘」，
-白白浪费一轮。现在改成轮询五分钟，落一个下一个。
+原先 `restore` 之后 `sleep(8)` 就查 `file_list`，经常只落了一两个文件，其余判成「还没落盘」，白白浪费一轮。现在改成轮询五分钟，落一个下一个。
+
+两件事的细节在 [pikpak.md](pikpak.md)。
 
 ## OpenList 的 put 会僵死
 
-`requests.put(..., timeout=3600)`，网络抖一下这个连接就永远不返回，进程卡住，
-日志停在最后一个成功的文件上，看着像还在传。三路同时卡死过一次，卡了十几分钟才发现。
+`requests.put(..., timeout=3600)`，网络抖一下这个连接就永远不返回，进程卡住，日志停在最后一个成功的文件上，看着像还在传。三路同时卡死过一次，卡了十几分钟才发现。
 
-现在超时（连接 30 秒，读 2 小时），失败重试三次，云端已有同尺寸的跳过。重跑成本很低。
+现在超时是连接 30 秒、读 2 小时，失败重试三次，云端已有同尺寸的跳过。重跑成本很低。
 
-顺带一个：大文件走 OpenList 是同步转发的，客户端把数据交给 alist，alist 再慢慢传到云端，
-传完才返回 HTTP 响应。所以超时不能按本地带宽算 —— 1.5GB 的文件 600 秒超时必挂。
+顺带一个：大文件走 OpenList 是同步转发的，客户端把数据交给 alist，alist 再慢慢传到云端，传完才返回 HTTP 响应。所以超时不能按本地带宽算——1.5GB 的文件 600 秒超时必挂。
 
 ## token 会失效，401 之后会一路空跑
 
-OpenList 的 token 过期后每个请求都返回 `401 token is invalidated`。原来的代码只在列目录时重登，
-上传路径没管，结果十分钟内烧掉 1400 个文件，日志刷得飞快，一个都没上去。
+OpenList 的 token 过期后每个请求都返回 `401 token is invalidated`。原来的代码只在列目录时重登，上传路径没管，结果十分钟内烧掉 1400 个文件，日志刷得飞快，一个都没上去。
 
 现在上传遇到 401 会重新登录再传那一个文件。
 
@@ -73,7 +64,7 @@ OpenList 的 token 过期后每个请求都返回 `401 token is invalidated`。�
 
 某些沙箱环境给 `os.unlink` 加了限额，删到第 50 个开始报：
 
-```
+```text
 [safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED] count=50 threshold=50
 ```
 
@@ -91,20 +82,16 @@ libc.unlink(b"/path/to/file")
 
 ## 抓错作者
 
-在频道里搜结果、用 JS `element.click()` 点进去，Telegram 没反应 —— 它的框架不认合成事件。
-必须用真实鼠标坐标 `page.mouse.click(x, y)`。
+在频道里搜结果、用 JS `element.click()` 点进去，Telegram 没反应——它的框架不认合成事件。必须用真实鼠标坐标 `page.mouse.click(x, y)`。
 
-症状是数量一直不对（怎么抓都是 39 张），实际抓的根本不是目标作者。每次拿到东西记得核对
-帖子文本里有没有作者 tag。
+症状是数量一直不对（怎么抓都是 39 张），实际抓的根本不是目标作者。每次拿到东西记得核对帖子文本里有没有作者 tag。
 
 ## 顺序错
 
-曾经下出来的图顺序是乱的，因为 id 是从缓存里捞的。真正的顺序只能从 `messages.getReplies`
-的消息 id 来。文件 id 的末位数字跟顺序无关，别想当然。
+曾经下出来的图顺序是乱的，因为 id 是从缓存里捞的。真正的顺序只能从 `messages.getReplies` 的消息 id 来。文件 id 的末位数字跟顺序无关，别想当然。
 
 ## 进度账本和实际文件会脱钩
 
-`dl_progress.json` 记着「这个文件下过了」，但文件可能因为中断、清理、迁移而不在本地。
-这时 `pikpak get` 会直接跳过它，`push` 也没东西可传，看着一切正常，实际永远缺那几个。
+`dl_progress.json` 记着「这个文件下过了」，但文件可能因为中断、清理、迁移而不在本地。这时 `pikpak get` 会直接跳过它，`push` 也没东西可传，看着一切正常，实际永远缺那几个。
 
 处理办法是把对应期数的进度条目删掉再跑一遍。
